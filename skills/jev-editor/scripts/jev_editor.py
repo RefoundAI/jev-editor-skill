@@ -99,6 +99,16 @@ def split_sections(text: str) -> list[tuple[str, str]]:
     return [(t, b) for t, b in sections if len(b.split()) >= 40]
 
 
+REFERENCE_TITLE = re.compile(r"^(sources?|references?|further reading|resources|links|footnotes|credits)\b", re.I)
+
+
+def is_reference_section(title: str, body: str) -> bool:
+    """A list of links is not prose. Don't score it, and don't mistake it for the closing."""
+    lines = [l for l in body.split("\n") if l.strip()]
+    link_lines = sum(1 for l in lines if re.match(r"^\s*[-*\d.]+\s*\[", l))
+    return bool(REFERENCE_TITLE.match(title)) or (len(lines) > 2 and link_lines / len(lines) > 0.6)
+
+
 def voice_references(paths: list[str], exclude: str) -> list[str]:
     """Up to five ~230-word prose excerpts from the author's own finished writing."""
     files = []
@@ -144,16 +154,16 @@ def ask(client, state, questions: dict) -> dict:
     return {k: norm(k, a) for k, a in call(client, state, questions).items()}
 
 
-def evaluate(path: str, keyword: str | None, voice_paths: list[str]) -> dict:
+def evaluate(path: str, keyword: str | None, voice_paths: list[str], references_verified: bool = False) -> dict:
     raw = open(path, encoding="utf-8").read()
     fm, _ = split_frontmatter(raw)
     text = clean(raw)
-    sections = split_sections(text)
+    sections = [s for s in split_sections(text) if not is_reference_section(*s)]
     refs = voice_references(voice_paths, exclude=path) if voice_paths else []
     client = TypeSafeClient()
 
     def section_job(title, body):
-        out = ask(client, f"## {title}\n\n{body}", active("section"))
+        out = ask(client, body, active("section"))
         if refs:
             a = call(client, {"reference_samples": refs, "candidate": " ".join(body.split()[:400])}, {"voice_match": VOICE_MATCH})["voice_match"]
             out["voice_match"] = round(a.score / 3, 3)
@@ -175,7 +185,8 @@ def evaluate(path: str, keyword: str | None, voice_paths: list[str]) -> dict:
         per_section = {t: f.result() for t, f in f_secs.items()}
 
     return score({"file": path, "words": len(text.split()), "lint": lint(path, keyword), "opening": opening, "closing": closing,
-                  "whole": whole, "primary_blocker": blocker, "sections": per_section, "voice_samples": len(refs)})
+                  "whole": whole, "primary_blocker": blocker, "sections": per_section, "voice_samples": len(refs),
+                  "references_verified": references_verified})
 
 
 # ---------------------------------------------------------------- scoring
@@ -219,7 +230,9 @@ def score(r: dict) -> dict:
     if voice_pct is not None:
         areas["voice"] = voice_pct
 
-    breaker_names = {"todo_markers"} | ({"whole.dangling_reference"} if r["words"] <= LONG_POST_WORDS else set())
+    breaker_names = {"todo_markers"}
+    if r["words"] <= LONG_POST_WORDS and not r.get("references_verified"):
+        breaker_names.add("whole.dangling_reference")
     breakers = [c["check"] for c in checks if not c["pass"] and c["check"] in breaker_names]
     bars = {"voice": VOICE_AREA_BAR}
 
@@ -263,10 +276,13 @@ if __name__ == "__main__":
     ap.add_argument("file")
     ap.add_argument("--keyword", help="target search phrase, enables keyword placement checks")
     ap.add_argument("--voice-samples", nargs="*", default=[], help="files or a folder of the author's own finished writing")
+    ap.add_argument("--references-verified", action="store_true",
+                    help="pass ONLY after checking by hand that every 'earlier', 'above', 'below', 'next section' points at something real. "
+                         "Jev can't tell a dangling reference from a post that quotes or discusses one.")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
     try:
-        result = evaluate(args.file, args.keyword, args.voice_samples)
+        result = evaluate(args.file, args.keyword, args.voice_samples, args.references_verified)
     except Exception as e:  # surface API and auth errors plainly for the calling agent
         sys.exit(f"jev_editor failed: {type(e).__name__}: {e}")
     print(json.dumps(result, indent=2) if args.json else report(result))

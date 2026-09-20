@@ -42,6 +42,8 @@ export TYPESAFE_API_KEY=...   # from typesafe.ai. Never write the key into a fil
 - A flagged tell inside a quotation or an example of bad writing is not a problem. Jev cannot tell use from mention. Check before "fixing".
 - The author's own habits beat the generic list. If their published writing uses a pattern on purpose, leave it. Thresholds are set from the author's own posts for this reason (see Calibration).
 - `primary_blocker` is advisory. On posts over about 6,000 words it is close to noise.
+- `whole.dangling_reference` is a deal-breaker, and it has a known false positive: a post that quotes or discusses a broken reference. When it fires, list every "earlier", "above", "below", and "next section" in the draft and confirm each target exists. Only then re-run with `--references-verified`.
+- Link-list sections (Sources, References, Further reading) are skipped. They are never scored and never treated as the closing.
 
 ## What the numbers mean
 

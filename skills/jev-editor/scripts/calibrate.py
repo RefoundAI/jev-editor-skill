@@ -48,7 +48,7 @@ def jobs_for(path: str, per_doc_sections: int, rng: random.Random) -> list[tuple
     body_sections = [s for s in sections[1:] if 120 <= len(s[1].split()) <= 900] or sections
     picked = rng.sample(body_sections, min(per_doc_sections, len(body_sections)))
     out = [("whole", build_whole_state(fm, text)), ("opening", sections[0][1]), ("closing", sections[-1][1])]
-    out += [("section", f"## {t}\n\n{b}") for t, b in picked]
+    out += [("section", b) for t, b in picked]
     return out
 
 
