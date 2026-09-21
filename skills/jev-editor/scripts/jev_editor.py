@@ -81,6 +81,7 @@ def clean(text: str) -> str:
     text = re.sub(r"\{/\*.*?\*/\}|<!--.*?-->", "", text, flags=re.S)            # comments: notes to self, not prose
     text, _ = strip_code(text, placeholder="[code block]")
     text = re.sub(r"^<[A-Z][^>]*/>\s*$", "[interactive component]", text, flags=re.M)
+    text = re.sub(r"^<(video|audio|img|iframe|source)\b[^>]*>\s*$", "[embedded media]", text, flags=re.M | re.I)
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 

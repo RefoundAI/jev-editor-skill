@@ -77,7 +77,7 @@ def split_frontmatter(raw: str) -> tuple[dict, str]:
 def prose_only(body: str) -> str:
     t, _ = strip_code(body)
     t = re.sub(r"\{/\*.*?\*/\}|<!--.*?-->", "", t, flags=re.S)
-    t = re.sub(r"^import .*$|^<[A-Z][^>]*/>\s*$|^\|.*$|^>.*$", "", t, flags=re.M)  # imports, components, tables, quotes
+    t = re.sub(r"^import .*$|^<[A-Z][^>]*/>\s*$|^<(video|audio|img|iframe|source)\b[^>]*>\s*$|^\|.*$|^>.*$", "", t, flags=re.M)  # imports, components, media, tables, quotes
     return re.sub(r"`[^`]*`", "", t)
 
 
