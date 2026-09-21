@@ -50,7 +50,7 @@ Sources: Google technical writing courses and developer style guide (developers.
 | --- | --- | --- |
 | Title 30 to 60 characters | lint | Zyppy: 51 to 60 characters was least rewritten, over 70 rewritten 99.9% of the time. A heuristic, not a Google rule. |
 | Title is honest and specific; description gives a reason to click | Jev | Ablation-validated. |
-| Meta description 110 to 160 characters | lint | Display convention only. Google rewrites about 63% of them. |
+| Meta description 110 to 160 characters | lint | Display convention only. Google often writes its own snippet. |
 | Opening names the topic and states the answer in the first 100 words | Jev | 44% of ChatGPT citations come from the first 30% of a page. |
 | Central concept defined in one quotable sentence | Jev | Definitive phrasing was about 2x more likely to be cited. |
 | Internal links (3+), outbound links to sources (3+) | lint | In the GEO paper, citing sources gave the largest visibility gain for lower-ranked pages. |
