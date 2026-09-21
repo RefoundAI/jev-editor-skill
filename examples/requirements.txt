@@ -1,2 +1,0 @@
-typesafe-sdk
-anthropic

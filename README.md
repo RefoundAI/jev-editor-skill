@@ -91,14 +91,6 @@ This runs every candidate question over both sets and shows which ones separate 
 - **Point at a sentence.** You get the section. Finding the sentence is the agent's job.
 - **Tell use from mention.** If your post quotes a bad pattern in order to discuss it, the quote gets flagged.
 
-## Also in this repo
-
-[`examples/self_editing_loop.py`](examples/self_editing_loop.py) is the loop from the blog post: Jev judges a paragraph with nine questions, Claude rewrites it using only the author's notes, three passes maximum. Jev checks every draft against those notes, so an invented fact blocks publishing.
-
-[`examples/self_editing_loop_first_attempt.py`](examples/self_editing_loop_first_attempt.py) is an earlier version with no notes, kept because its failure is instructive: asked for specifics it didn't have, the rewriter invented a source, and the judge rewarded it.
-
-Both need `TYPESAFE_API_KEY` and `ANTHROPIC_API_KEY`.
-
 ## License
 
 MIT. Built by [Sid Bharath](https://sidbharath.com) at [Refound AI](https://refoundai.com).
