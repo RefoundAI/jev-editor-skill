@@ -93,7 +93,12 @@ This runs every candidate question over both sets and shows which ones separate 
 
 ## Also in this repo
 
-[`examples/self_editing_loop.py`](examples/self_editing_loop.py) is the simpler loop from the blog post: Jev judges a paragraph, Claude rewrites it, three passes maximum. It needs `TYPESAFE_API_KEY` and `ANTHROPIC_API_KEY`.
+The two loops from the blog post, where Jev judges a paragraph and Claude rewrites it, three passes maximum:
+
+- [`examples/self_editing_loop.py`](examples/self_editing_loop.py) is the first version. It is kept because its failure is instructive: asked for specifics it didn't have, the rewriter invented a source, and the judge rewarded it.
+- [`examples/self_editing_loop_v2.py`](examples/self_editing_loop_v2.py) is the fixed version. The rewriter may only use the author's notes, Jev checks the draft against those notes, feedback maps to real signals, and the loop returns its best clean draft.
+
+Both need `TYPESAFE_API_KEY` and `ANTHROPIC_API_KEY`.
 
 ## License
 
