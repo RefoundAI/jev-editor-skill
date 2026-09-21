@@ -1,19 +1,21 @@
 """
-Self-editing article loop.
+Self-editing article loop, from "Jev: The Complete Guide to TypeSafe's System One Model".
 
-Jev (TypeSafe AI) judges a draft against a fixed battery of questions.
-An LLM (Claude, here) revises the draft based on that judgment.
-The two hand the draft back and forth until it passes or a max-iteration
-guard trips and it escalates to a human.
+Jev judges a draft against nine typed questions. An LLM (Claude, here) rewrites
+it using only facts from the author's NOTES. They hand the draft back and forth
+until it passes, or until three passes are up and a human takes over.
 
-Requires:
-  - TYPESAFE_API_KEY   (https://typesafe.ai)
-  - ANTHROPIC_API_KEY  (https://console.anthropic.com)
+Design choices worth noticing:
+  - The rewriter may only use facts from NOTES. Ask a model for "specifics"
+    without supplying any and it will invent them.
+  - Jev checks the draft AGAINST those notes (unsupported_claims). It can't check
+    facts against the world, but it can check a draft against source material.
+  - Every feedback instruction maps to a signal Jev raised. With no signal, the
+    loop stops instead of sending a vague "make it better".
+  - The loop returns the best draft that passed the notes check, not the last one.
 
-Install:
+Requires TYPESAFE_API_KEY and ANTHROPIC_API_KEY.
   pip install typesafe-sdk anthropic
-
-Run:
   python self_editing_loop.py
 """
 
@@ -25,41 +27,29 @@ from typesafe_sdk import Choice, Noul, Score, TypeSafeClient
 jev = TypeSafeClient()  # reads TYPESAFE_API_KEY
 claude = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
 
-
+# State is now an object, so questions refer to `draft` and `notes` by name.
 QUESTIONS = {
     "has_specific_hook": Noul(
-        instructions=(
-            "The opening 1-2 sentences make a specific, concrete claim or "
-            "observation, not a generic statement anyone could write about this topic."
-        )
+        instructions="The opening 1-2 sentences of `draft` make a specific, concrete claim or observation, not a generic statement anyone could write about this topic."
     ),
     "makes_real_argument": Noul(
-        instructions=(
-            "The piece stakes out an actual opinion or takeaway, rather than "
-            "just describing or surveying the topic neutrally."
-        )
+        instructions="`draft` stakes out an actual opinion or takeaway, rather than just describing or surveying the topic neutrally."
     ),
     "has_filler": Noul(
-        instructions=(
-            "The piece contains noticeable padding, repetition, or throat-clearing "
-            "that doesn't add new information."
-        )
+        instructions="`draft` contains noticeable padding, repetition, or throat-clearing that doesn't add new information."
     ),
     "sounds_templated": Noul(
-        instructions=(
-            "The phrasing reads like generic AI output: hedge-y language, cliche "
-            "transitions ('in today's fast-paced world', 'it's important to note'), "
-            "or list-heavy structure without real substance."
-        )
+        instructions="The phrasing of `draft` reads like generic AI output: hedge-y language, cliche transitions ('in today's fast-paced world', 'it's important to note'), or list-heavy structure without real substance."
     ),
     "matches_audience": Noul(
-        instructions=(
-            "The piece speaks to a technically literate reader's actual level and "
-            "concerns, rather than a generic reader."
-        )
+        instructions="`draft` speaks to a technically literate reader's actual level and concerns, rather than a generic reader."
+    ),
+    # New: a grounded check. Jev compares the draft to the notes it was given.
+    "unsupported_claims": Noul(
+        instructions="`draft` contains a specific fact, number, quote, person, company, or anecdote that is not supported by `notes`."
     ),
     "insight_density": Score(
-        instructions="How much non-obvious insight does this piece contain, beyond describing the topic?",
+        instructions="How much non-obvious insight does `draft` contain, beyond describing the topic?",
         criteria=[
             "Purely descriptive -- no insight beyond restating the topic",
             "One genuinely useful insight or example",
@@ -68,7 +58,7 @@ QUESTIONS = {
         ],
     ),
     "structural_clarity": Score(
-        instructions="How well organized and scannable is this piece?",
+        instructions="How well organized and scannable is `draft`?",
         criteria=[
             "Disorganized -- hard to follow the throughline",
             "Loosely organized",
@@ -77,13 +67,12 @@ QUESTIONS = {
         ],
     ),
     "primary_blocker": Choice(
-        instructions="If this piece is not ready to publish as-is, what's the single biggest thing holding it back?",
+        instructions="What is the single biggest thing holding `draft` back from being published as-is?",
         criteria={
-            "ready": "It's ready to publish as-is",
-            "needs_stronger_hook": "The opening doesn't earn the reader's attention",
-            "needs_more_specificity": "Too vague or generic; needs concrete detail",
-            "needs_cutting": "Padding or repetition needs to be cut",
-            "needs_fact_check": "Contains a claim that needs verification",
+            "ready": "Nothing significant; it can be published as-is",
+            "needs_stronger_hook": "The opening is generic and doesn't earn attention",
+            "needs_more_specificity": "Too vague or generic; lacks concrete detail",
+            "needs_cutting": "Padding or repetition should be cut",
         },
     ),
 }
@@ -91,55 +80,69 @@ QUESTIONS = {
 WEIGHTS = {
     "has_specific_hook": 0.20,
     "makes_real_argument": 0.20,
-    "has_filler": -0.15,  # penalize
-    "sounds_templated": -0.15,  # penalize
+    "has_filler": -0.15,
+    "sounds_templated": -0.15,
     "matches_audience": 0.10,
     "insight_density": 0.20,  # normalized to /3
     "structural_clarity": 0.10,  # normalized to /3
 }
 
 PASS_THRESHOLD = 0.75
+MAX_UNSUPPORTED = 0.30  # a hard condition, kept out of the weighted score on purpose
 MAX_ITERATIONS = 3
 
 
-def evaluate(draft: str) -> dict:
-    response = jev.system_one(state=draft, questions=QUESTIONS)
-    return response.answers
+def evaluate(draft: str, notes: str) -> dict:
+    return jev.system_one(state={"notes": notes, "draft": draft}, questions=QUESTIONS).answers
 
 
 def composite_score(answers: dict) -> float:
     score = 0.0
-    score += WEIGHTS["has_specific_hook"] * answers["has_specific_hook"].noul
-    score += WEIGHTS["makes_real_argument"] * answers["makes_real_argument"].noul
-    score += WEIGHTS["has_filler"] * answers["has_filler"].noul
-    score += WEIGHTS["sounds_templated"] * answers["sounds_templated"].noul
-    score += WEIGHTS["matches_audience"] * answers["matches_audience"].noul
-    score += WEIGHTS["insight_density"] * (answers["insight_density"].score / 3)
-    score += WEIGHTS["structural_clarity"] * (answers["structural_clarity"].score / 3)
-    # the negative weights can pull this below zero, so clip into a clean 0-1 range
-    return max(0.0, min(1.0, score + 0.3))
+    for name, weight in WEIGHTS.items():
+        a = answers[name]
+        score += weight * (a.score / 3 if a.type == "score" else a.noul)
+    return max(0.0, min(1.0, (score + 0.3) / 1.1))  # rescale the -0.3..0.8 range onto 0..1
 
 
-def build_feedback(answers: dict) -> str:
-    """Jev only returns probabilities -- this is where a typed diagnosis
-    becomes plain-language instructions a writer model can act on."""
+def passes(answers: dict) -> bool:
+    return (
+        composite_score(answers) >= PASS_THRESHOLD
+        and answers["primary_blocker"].choice == "ready"
+        and answers["unsupported_claims"].noul <= MAX_UNSUPPORTED
+    )
+
+
+BLOCKER_INSTRUCTIONS = {
+    "needs_stronger_hook": "Rewrite the first two sentences so they open on the most specific fact in the notes.",
+    "needs_more_specificity": "Replace general statements with concrete details from the notes.",
+    "needs_cutting": "Cut any sentence that restates an earlier one.",
+}
+
+
+def build_feedback(answers: dict) -> list[str]:
+    """Turn Jev's numbers into instructions. An empty list means there is
+    nothing concrete to ask for, and the loop should stop rather than guess."""
     issues = []
+    if answers["unsupported_claims"].noul > MAX_UNSUPPORTED:
+        issues.append("Remove every fact, number, person, company, or anecdote that is not in the notes. Do not replace it with another invented one.")
     if answers["has_specific_hook"].noul < 0.5:
-        issues.append("Open with a specific, concrete claim or example, not a generic statement.")
+        issues.append("Open with a specific, concrete claim taken from the notes, not a generic statement.")
     if answers["makes_real_argument"].noul < 0.5:
         issues.append("Stake out an actual opinion or takeaway instead of surveying the topic neutrally.")
     if answers["has_filler"].noul > 0.5:
-        issues.append("Cut padding and repeated phrasing -- every sentence should add something new.")
+        issues.append("Cut padding and repeated phrasing. Every sentence should add something new.")
     if answers["sounds_templated"].noul > 0.5:
-        issues.append("Rewrite in a distinct voice -- cut hedge phrases and cliche transitions.")
+        issues.append("Rewrite in a plain, direct voice. Cut hedge phrases and cliche transitions.")
     if answers["insight_density"].score < 1.5:
-        issues.append("Add a specific, non-obvious insight or example, not just a description.")
-    if not issues:
-        issues.append("Tighten the weakest paragraph and clarify the throughline.")
-    return "\n".join(f"- {i}" for i in issues)
+        issues.append("Build the paragraph around the most non-obvious point in the notes.")
+    blocker = answers["primary_blocker"].choice
+    if blocker in BLOCKER_INSTRUCTIONS and BLOCKER_INSTRUCTIONS[blocker] not in issues:
+        issues.append(BLOCKER_INSTRUCTIONS[blocker])
+    return issues
 
 
-def rewrite(draft: str, feedback: str) -> str:
+def rewrite(draft: str, issues: list[str], notes: str) -> str:
+    feedback = "\n".join(f"- {i}" for i in issues)
     message = claude.messages.create(
         model="claude-sonnet-5",
         max_tokens=1024,
@@ -148,8 +151,13 @@ def rewrite(draft: str, feedback: str) -> str:
                 "role": "user",
                 "content": (
                     "Revise the draft below to address every issue listed. "
-                    "Keep the core point and roughly the same length. "
-                    "Return only the revised draft, no commentary.\n\n"
+                    "Keep roughly the same length.\n\n"
+                    "Rules:\n"
+                    "- Use only facts that appear in the author's notes. Never invent an example, "
+                    "number, person, company, or anecdote.\n"
+                    "- If an issue can't be fixed with what's in the notes, leave it unfixed.\n"
+                    "- Return only the revised draft. No commentary, no notes to the editor.\n\n"
+                    f"Author's notes:\n{notes}\n\n"
                     f"Issues to fix:\n{feedback}\n\n"
                     f"Draft:\n{draft}"
                 ),
@@ -159,21 +167,29 @@ def rewrite(draft: str, feedback: str) -> str:
     return message.content[0].text
 
 
-def self_edit(draft: str) -> tuple[str, str, int]:
-    for i in range(1, MAX_ITERATIONS + 1):
-        answers = evaluate(draft)
-        score = composite_score(answers)
-        blocker = answers["primary_blocker"].choice
-        print(f"[iteration {i}] score={score:.2f}  blocker={blocker}")
+def self_edit(draft: str, notes: str) -> tuple[str, str, int]:
+    best = (-1.0, draft)  # (score, draft) among drafts with no unsupported claims
 
-        if score >= PASS_THRESHOLD and blocker == "ready":
+    for i in range(1, MAX_ITERATIONS + 1):
+        answers = evaluate(draft, notes)
+        score = composite_score(answers)
+        unsupported = answers["unsupported_claims"].noul
+        print(f"[iteration {i}] score={score:.2f}  blocker={answers['primary_blocker'].choice}  unsupported={unsupported:.2f}")
+
+        if unsupported <= MAX_UNSUPPORTED and score > best[0]:
+            best = (score, draft)
+        if passes(answers):
             return draft, "ready_to_publish", i
 
-        feedback = build_feedback(answers)
-        print(f"[iteration {i}] feedback:\n{feedback}\n")
-        draft = rewrite(draft, feedback)
+        issues = build_feedback(answers)
+        if not issues:
+            # Jev has no concrete complaint left. Another rewrite would be a guess.
+            return best[1], "needs_human_review", i
+        print("\n".join(f"    - {x}" for x in issues))
+        if i < MAX_ITERATIONS:
+            draft = rewrite(draft, issues, notes)
 
-    return draft, "needs_human_review", MAX_ITERATIONS
+    return best[1], "needs_human_review", MAX_ITERATIONS
 
 
 SLOP_DRAFT = """In today's fast-paced digital landscape, AI agents are revolutionizing
@@ -183,8 +199,17 @@ offer a wide range of benefits, from automating repetitive tasks to providing va
 insights. By harnessing the power of AI agents, companies can unlock new levels of
 efficiency and stay ahead of the competition."""
 
+# What the author actually knows. Replace with your own.
+NOTES = """- I build production AI agents for clients.
+- Most of the LLM calls inside those agents make a decision. Few of them write anything.
+- Example: one agent reads every inbound customer email for an e-commerce brand and decides what kind of email it is before anything else happens.
+- Example: another agent scans social media and decides whether each brand it finds meets a VC firm's investment criteria.
+- Today each of those decisions is a full LLM call. That is slow, and it adds up at volume.
+- When an LLM says it is "confident" in a classification, that number is not calibrated.
+- These decisions are closed-ended: a fixed set of categories, or a list of yes/no criteria."""
+
 
 if __name__ == "__main__":
-    final_draft, status, iterations = self_edit(SLOP_DRAFT)
+    final_draft, status, iterations = self_edit(SLOP_DRAFT, NOTES)
     print(f"\nFinal status: {status} after {iterations} iteration(s)\n")
     print(final_draft)
