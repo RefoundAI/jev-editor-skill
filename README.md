@@ -4,8 +4,8 @@ An editorial gate for blog posts and articles, packaged as an agent skill. It sc
 
 - **AI tells**: negative parallelism ("it's not X, it's Y"), empty intensifiers, mic-drop closers, signposting, and other patterns that make writing read as machine-generated
 - **Voice**: how closely each section matches samples of your own published writing
-- **Editorial**: the hook, the promise, the ending, dangling references, leftover TODOs
-- **SEO and AI search**: title, description, links, headings, a front-loaded answer, a quotable definition
+- **Editorial**: the hook, the promise, the ending, dangling references, leftover TODOs, and whether the post has calls to action in sensible places
+- **SEO and AI search**: title, description, headings, a front-loaded answer, a quotable definition, and links (enough of them, descriptive text, and internal links that point at posts that exist)
 
 It uses [TypeSafe's Jev](https://typesafe.ai) for fast, cheap, typed judgments. A full pass on a 4,500-word post is about 24 requests, takes about a second, and costs around a quarter of a cent.
 
@@ -62,7 +62,8 @@ cd skills/jev-editor/scripts
 # full report
 python jev_editor.py path/to/draft.md \
   --keyword "your target phrase" \
-  --voice-samples path/to/post1.md path/to/post2.md path/to/post3.md
+  --voice-samples path/to/post1.md path/to/post2.md path/to/post3.md \
+  --content-dir path/to/published-posts
 
 # machine-readable
 python jev_editor.py path/to/draft.md --json
@@ -70,6 +71,8 @@ python jev_editor.py path/to/draft.md --json
 # only the free deterministic checks, no API key needed
 python lint.py path/to/draft.md --keyword "your target phrase"
 ```
+
+`--content-dir` checks that every internal link points at a post that exists. If your calls to action aren't components named like `SignupForm` or `NewsletterCta`, and aren't a plain `<form>`, tell it what they look like with `--cta-pattern 'YourComponentName'`. Pass `--site-domain yoursite.com` if you link to your own posts with absolute URLs.
 
 A draft passes when tells, editorial, and SEO each score 70 or higher, voice scores 60 or higher, and there are no deal-breakers (a leftover TODO, or a reference to a part of the post that doesn't exist).
 

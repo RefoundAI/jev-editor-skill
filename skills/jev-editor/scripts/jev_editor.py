@@ -163,7 +163,8 @@ def ask(client, state, questions: dict) -> dict:
     return {k: norm(k, a) for k, a in call(client, state, questions).items()}
 
 
-def evaluate(path: str, keyword: str | None, voice_paths: list[str], references_verified: bool = False) -> dict:
+def evaluate(path: str, keyword: str | None, voice_paths: list[str], references_verified: bool = False,
+             content_dir: str | None = None, cta_pattern: str | None = None, site_domain: str | None = None) -> dict:
     raw = open(path, encoding="utf-8").read()
     fm, _ = split_frontmatter(raw)
     text = clean(raw)
@@ -194,7 +195,7 @@ def evaluate(path: str, keyword: str | None, voice_paths: list[str], references_
         whole, blocker = f_whole.result()
         per_section = {t: f.result() for t, f in f_secs.items()}
 
-    return score({"file": path, "words": len(text.split()), "lint": lint(path, keyword), "opening": opening, "closing": closing,
+    return score({"file": path, "words": len(text.split()), "lint": lint(path, keyword, content_dir, cta_pattern, site_domain), "opening": opening, "closing": closing,
                   "whole": whole, "primary_blocker": blocker, "sections": per_section, "voice_samples": len(refs),
                   "references_verified": references_verified})
 
@@ -289,10 +290,13 @@ if __name__ == "__main__":
     ap.add_argument("--references-verified", action="store_true",
                     help="pass ONLY after checking by hand that every 'earlier', 'above', 'below', 'next section' points at something real. "
                          "Jev can't tell a dangling reference from a post that quotes or discusses one.")
+    ap.add_argument("--content-dir", help="folder of your published posts; checks that internal links point at files that exist")
+    ap.add_argument("--cta-pattern", help="regex that matches a call to action in your markup")
+    ap.add_argument("--site-domain", help="your domain, so absolute links to your own site count as internal")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
     try:
-        result = evaluate(args.file, args.keyword, args.voice_samples, args.references_verified)
+        result = evaluate(args.file, args.keyword, args.voice_samples, args.references_verified, args.content_dir, args.cta_pattern, args.site_domain)
     except Exception as e:  # surface API and auth errors plainly for the calling agent
         sys.exit(f"jev_editor failed: {type(e).__name__}: {e}")
     print(json.dumps(result, indent=2) if args.json else report(result))

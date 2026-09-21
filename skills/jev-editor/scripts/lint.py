@@ -37,6 +37,11 @@ STOCK_PHRASES = [
     r"in order to", r"not only .{3,60} but also", r"whether you'?re .{3,60} or ", r"worth (noting|sitting with|taking)",
 ]
 
+# A call to action: an MDX/JSX component whose name says so, or a raw HTML form.
+# Override with --cta-pattern if your site names things differently.
+DEFAULT_CTA_PATTERN = r"<[A-Z]\w*(Form|Signup|SignUp|Subscribe|Newsletter|Cta|CTA|OptIn|LeadMagnet|Waitlist)\w*\b|<form\b"
+VAGUE_LINK_TEXT = {"here", "click here", "this", "link", "this link", "read more", "more", "this post", "this article", "source"}
+
 HEDGES = ["arguably", "perhaps", "possibly", "potentially", "it seems", "one might", "could potentially", "somewhat", "to some extent"]
 
 
@@ -87,7 +92,8 @@ def count_terms(text: str, terms: list[str]) -> dict:
     return {k: v for k, v in out.items() if v}
 
 
-def lint(path: str, keyword: str | None = None) -> dict:
+def lint(path: str, keyword: str | None = None, content_dir: str | None = None, cta_pattern: str | None = None,
+         site_domain: str | None = None) -> dict:
     raw = open(path, encoding="utf-8").read()
     fm, body = split_frontmatter(raw)
     prose = prose_only(body)
@@ -104,8 +110,9 @@ def lint(path: str, keyword: str | None = None) -> dict:
     h1 = re.findall(r"^# (.+)$", no_code, flags=re.M)
     h2 = re.findall(r"^## (.+)$", no_code, flags=re.M)
     h3 = re.findall(r"^### (.+)$", no_code, flags=re.M)
-    links = re.findall(r"(?<!!)\[[^\]]+\]\(([^)]+)\)", body)
-    internal = [l for l in links if l.startswith("/") or "sidbharath.com" in l]
+    link_pairs = re.findall(r"(?<!!)\[([^\]]+)\]\(([^)]+)\)", no_code)
+    links = [url for _, url in link_pairs]
+    internal = [l for l in links if l.startswith("/") or (site_domain and site_domain in l)]
     external = [l for l in links if l.startswith("http") and l not in internal]
     images = re.findall(r"!\[([^\]]*)\]\([^)]+\)", body)
 
@@ -150,12 +157,37 @@ def lint(path: str, keyword: str | None = None) -> dict:
     add("editorial", "has_table_or_list", bool(re.search(r"^\|.*\|$", body, flags=re.M)) or bool(re.search(r"^\s*[-*] ", body, flags=re.M)), "comparison table or list present")
     add("editorial", "todo_markers", not re.search(r"TODO[(:]|TKTK|\bTK\b|[Ll]orem ipsum", raw), f"{len(re.findall(r'TODO[(:]|TKTK', raw))} TODO marker(s) left in the draft")
 
+    # --- calls to action (countable). Positions are measured in words of prose.
+    cta_re = re.compile(cta_pattern or DEFAULT_CTA_PATTERN)
+    seen, cta_at = 0, []
+    for line in no_code.split("\n"):
+        if cta_re.search(line):
+            cta_at.append(seen)
+        elif not line.lstrip().startswith(("import ", "<", "|", "#")):
+            seen += len(line.split())
+    total = max(seen, 1)
+    add("editorial", "cta_present", len(cta_at) >= 1, f"{len(cta_at)} call(s) to action found")
+    if cta_at and total > 1500:
+        edges = [0] + cta_at + [total]
+        gap = max(b - a for a, b in zip(edges, edges[1:]))
+        add("editorial", "cta_spacing", gap <= 3000, f"longest stretch without a call to action: {gap} words (CTAs at words {cta_at} of {total})")
+        add("editorial", "cta_near_end", total - cta_at[-1] <= max(300, total * 0.1), f"last call to action is {total - cta_at[-1]} words before the end")
+
     # --- SEO (countable)
     add("seo", "title_length", 30 <= len(title) <= 60, f"{len(title)} chars: {title!r}")
     add("seo", "meta_description_length", 110 <= len(desc) <= 160, f"{len(desc)} chars")
     add("seo", "single_h1", len(h1) <= 1, f"{len(h1)} H1 in body (the layout renders the title as H1)")
     add("seo", "heading_hierarchy", not re.search(r"^## .*\n(?:(?!^## ).*\n)*?^#### ", body, flags=re.M) or bool(h3), "no skipped heading levels")
-    add("seo", "internal_links", len(internal) >= 3, f"{len(internal)} internal link(s)")
+    want_internal = max(3, n_words // 1500)
+    add("seo", "internal_links", len(set(internal)) >= want_internal, f"{len(set(internal))} distinct internal link(s), want {want_internal}+ for a post this long")
+    vague = [text for text, url in link_pairs if text.strip().lower() in VAGUE_LINK_TEXT or re.match(r"https?://", text.strip())]
+    add("seo", "link_text_descriptive", not vague, f"{len(vague)} link(s) with vague or bare-URL text: {vague[:6]}")
+    if content_dir:
+        import os
+        stems = {os.path.splitext(f)[0] for f in os.listdir(content_dir)}
+        pages = [u for u in set(internal) if not u.startswith("#")]
+        missing = [u for u in pages if u.split("#")[0].rstrip("/").split("/")[-1] not in stems]
+        add("seo", "internal_links_resolve", not missing, f"{len(pages) - len(missing)} of {len(pages)} internal links match a file in {content_dir}; missing: {missing}")
     add("seo", "external_links", len(external) >= 3, f"{len(external)} outbound link(s) to sources")
     add("seo", "images_have_alt", all(a.strip() for a in images) if images else True, f"{len(images)} image(s), {sum(1 for a in images if not a.strip())} missing alt text")
     add("seo", "hero_image", bool(fm.get("heroImage")), "heroImage set in frontmatter" if fm.get("heroImage") else "no heroImage")
@@ -174,8 +206,11 @@ def lint(path: str, keyword: str | None = None) -> dict:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("file"); ap.add_argument("--keyword"); ap.add_argument("--json", action="store_true")
+    ap.add_argument("--content-dir", help="folder of your published posts; checks that internal links point at files that exist")
+    ap.add_argument("--cta-pattern", help="regex that matches a call to action in your markup (default: common component names and <form>)")
+    ap.add_argument("--site-domain", help="your domain, so absolute links to your own site count as internal (relative links always do)")
     a = ap.parse_args()
-    r = lint(a.file, a.keyword)
+    r = lint(a.file, a.keyword, a.content_dir, a.cta_pattern, a.site_domain)
     if a.json:
         print(json.dumps(r, indent=2))
     else:

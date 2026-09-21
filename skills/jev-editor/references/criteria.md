@@ -35,6 +35,7 @@ Sources: Wikipedia, "Signs of AI writing" (en.wikipedia.org/wiki/Wikipedia:Signs
 | Closing: gives a next action, is not only a recap, lands with energy | Jev (closing state) |
 | Refers to parts of itself that do not exist | Jev on posts under 6,000 words, agent always |
 | Paragraphs over 120 words, code fences missing a language, TODO markers, word count | lint |
+| At least one call to action, no stretch over 3,000 words without one, and one within the last tenth of the post | lint |
 | Promise and payoff, single controlling idea, repetition across sections | agent |
 | Claims evidenced, results shown, first-hand experience is real | agent |
 | Replicable: prerequisites, exact commands, expected output, one likely error and its fix | agent |
@@ -53,6 +54,8 @@ Sources: Google technical writing courses and developer style guide (developers.
 | Opening names the topic and states the answer in the first 100 words | Jev | 44% of ChatGPT citations come from the first 30% of a page. |
 | Central concept defined in one quotable sentence | Jev | Definitive phrasing was about 2x more likely to be cited. |
 | Internal links (3+), outbound links to sources (3+) | lint | In the GEO paper, citing sources gave the largest visibility gain for lower-ranked pages. |
+| Link text says where the link goes: no "click here", no bare URLs | lint | Also an accessibility basic |
+| Internal links point at posts that exist | lint, needs `--content-dir` | |
 | Images have alt text, hero image set, single H1, no skipped heading levels | lint | Heading order is an accessibility and parsing check, not a ranking factor. |
 | Keyword in title, description, first 100 words, and a heading | lint, needs `--keyword` | |
 | Some headings phrased as questions | lint | Single observational study. Low weight. |

@@ -9,7 +9,7 @@ Three layers. Each does only what it proved it can do.
 
 | Layer | Does | Why |
 | --- | --- | --- |
-| `scripts/lint.py` (code) | Anything countable: em-dashes, intensifiers, AI vocabulary, stock phrases, sentence and paragraph rhythm, title and description length, links, headings, alt text, TODO markers | Jev is unreliable at counting. Code is exact and free. |
+| `scripts/lint.py` (code) | Anything countable: em-dashes, intensifiers, AI vocabulary, stock phrases, sentence and paragraph rhythm, title and description length, headings, alt text, TODO markers. Links: enough internal and outbound links, descriptive link text, and internal links that point at posts that exist. Calls to action: at least one, none too far apart, and one near the end | Jev is unreliable at counting. Code is exact and free. |
 | Jev (`scripts/jev_editor.py`) | Narrow typed judgments on small states: the opening, each section, the title and description, the closing. Voice match against the author's own writing. | Fast and cheap enough to ask about 12 questions per section, every pass. Only questions that passed calibration are used. |
 | You, the agent | Fact-checking, promise and payoff, replicability, limitations, internal references, repetition | Jev failed calibration on every one of these for long posts. They need a reader. |
 
@@ -25,8 +25,10 @@ export TYPESAFE_API_KEY=...   # from typesafe.ai. Never write the key into a fil
 1. Run the gate. Point `--voice-samples` at three or more finished pieces by the same author (files or a folder). Without samples, voice is not scored.
    ```bash
    python scripts/jev_editor.py draft.md --keyword "target phrase" \
-     --voice-samples posts/a.md posts/b.md posts/c.md --json
+     --voice-samples posts/a.md posts/b.md posts/c.md \
+     --content-dir posts/ --json
    ```
+   `--content-dir` is the folder of published posts. With it, every internal link is checked against a real file. If the site's calls to action aren't named like `SignupForm` or `NewsletterCta` and aren't a plain `<form>`, pass `--cta-pattern` with a regex that matches them.
 2. Read `verdict`, `area_scores`, `deal_breakers`, and the failing entries in `checks`. A draft passes when tells, editorial, and SEO are each 70 or higher, voice is 60 or higher, and there are no deal-breakers.
 3. Fix in this order:
    1. **Deal-breakers.** TODO markers left in the draft. References to parts of the post that do not exist.
@@ -41,6 +43,7 @@ export TYPESAFE_API_KEY=...   # from typesafe.ai. Never write the key into a fil
 - Never invent first-hand experience, numbers, or results. If the draft lacks the author's own experience, ask them what happened when they used the thing, and write that in.
 - A flagged tell inside a quotation or an example of bad writing is not a problem. Jev cannot tell use from mention. Check before "fixing".
 - The author's own habits beat the generic list. If their published writing uses a pattern on purpose, leave it. Thresholds are set from the author's own posts for this reason (see Calibration).
+- When adding internal links, link to posts that are relevant to the sentence, using text that says where the link goes. When a call to action is missing, ask the author which offer fits this post. Never invent one.
 - `primary_blocker` is advisory. On posts over about 6,000 words it is close to noise.
 - `whole.dangling_reference` is a deal-breaker, and it has a known false positive: a post that quotes or discusses a broken reference. When it fires, list every "earlier", "above", "below", and "next section" in the draft and confirm each target exists. Only then re-run with `--references-verified`.
 - Blockquotes and tables are left out of the per-section tell and voice checks. They hold quoted or example text, which isn't the author's prose.
