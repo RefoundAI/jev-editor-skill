@@ -124,7 +124,8 @@ def lint(path: str, keyword: str | None = None) -> dict:
     add = lambda area, name, ok, detail: checks.append({"area": area, "check": name, "pass": bool(ok), "detail": detail})
 
     # --- AI tells (countable)
-    add("ai_tells", "em_dashes", raw.count("—") == 0, f"{raw.count(chr(0x2014))} found")
+    # counted in the author's own prose: quotes, tables, and code are excluded above
+    add("ai_tells", "em_dashes", prose.count("\u2014") == 0, f"{prose.count(chr(0x2014))} found in your own prose")
     add("ai_tells", "intensifiers_per_1k", per_1k(sum(intens.values())) <= 3, f"{per_1k(sum(intens.values()))}/1k words: {intens}")
     add("ai_tells", "ai_vocabulary_per_1k", per_1k(sum(vocab.values())) <= 2, f"{per_1k(sum(vocab.values()))}/1k words: {vocab}")
     add("ai_tells", "stock_phrases", not stock, f"{stock} (check whether each is your own prose or a quoted example)")

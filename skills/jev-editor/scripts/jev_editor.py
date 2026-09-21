@@ -85,6 +85,14 @@ def clean(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
+def own_prose(section_body: str) -> str:
+    """The author's own sentences: no blockquotes (someone else's words, or an example
+    being discussed) and no tables (usually data or examples). Used for the per-section
+    tell and voice questions, so a post that quotes bad writing isn't blamed for it."""
+    text = re.sub(r"^\s*>.*$|^\s*\|.*$", "", section_body, flags=re.M)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
 def build_whole_state(frontmatter: dict, text: str) -> dict:
     words = text.split()
     if len(words) > 15000:  # Jev's context is 32k tokens; leave headroom for the questions
@@ -164,6 +172,7 @@ def evaluate(path: str, keyword: str | None, voice_paths: list[str], references_
     client = TypeSafeClient()
 
     def section_job(title, body):
+        body = own_prose(body)
         out = ask(client, body, active("section"))
         if refs:
             a = call(client, {"reference_samples": refs, "candidate": " ".join(body.split()[:400])}, {"voice_match": VOICE_MATCH})["voice_match"]
